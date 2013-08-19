@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Using Apache Crunch | davw.github.io</title>
+        <link href="http://fonts.googleapis.com/css?family=Oswald:700|Droid+Serif:400,700italic" rel="stylesheet" type="text/css" />
+        <link rel="stylesheet" type="text/css" href="/css/main.css">
+        <script src="/lib/prettify/run_prettify.js"></script>
+    </head>
+    <body>
+        <article>
+            <h1><a href="/">davw.github.io</a></h1>
+            <h2>Using Apache Crunch</h2>
+            <p>
+                <a href="http://crunch.apache.org">Crunch</a> is an abstraction over <a href="http://hadoop.apache.org/">Hadoop</a> MapReduce which allows you develop data processing jobs at a higher level than raw MapReduce code. It's major distinction from the other major players in the Hadoop ecosystem (Hive, Pig, Cascading ...) is that it uses Java's own type system to work with data throughout the pipeline, resulting in meaningful record classes and type-safe code via generics</a>
+            </p>
+            <p>
+                Unfortunately, the documentation I could find on this project has been quite disappointing, so here I'll be better explaining the concepts based on what I've discovered from a combination of doc fragments, source code archaeology, and trial and error.
+            </p>
+            <h3>Show me some code!</h3>
+            <p>
+                OK, lets start simple and index a list of words by their length. Code snippets in this guide will be presented as unit tests, as they're runnable and more explicit about the kind of behaviour you expect when you run them.
+            </p>
+            <pre class="prettyprint lang-java">
+private static MapFn&lt;String, Integer&gt; stringLength = new MapFn&lt;String, Integer&gt;() {
+    @Override
+    public Integer map(String input) {
+        return input.length();
+    }
+};
+
+@Test
+public void testStringLengthIndex() {
+    PCollection&lt;String&gt; words = MemPipeline.typedCollectionOf(
+            Writables.strings(),
+            "when", "shall", "we", "three", "meet", "again");
+    PTable&lt;Integer, String&gt; output =
+        words.by(stringLength, Writables.ints())
+             .groupByKey()
+             .combineValues(Aggregators.STRING_CONCAT(",", false));
+
+    Map&lt;Integer, String&gt; actual = output.materializeToMap();
+    Map&lt;?, ?&gt; expected = ImmutableMap.builder()
+                                     .put(2, "we")
+                                     .put(4, "when,meet")
+                                     .put(5, "shall,three,again")
+                                     .build();
+    assertEquals(expected, actual);
+
+}
+            </pre>
+            <p>Let's go through this piece by piece:</p>
+            <pre class="prettyprint lang-java">
+private static MapFn&lt;String, Integer&gt; stringLength = new MapFn&lt;String, Integer&gt;() {
+    @Override
+    public Integer map(String input) {
+        return input.length();
+    }
+};
+            </pre>
+            <p>
+                We define a MapFn implementation to transform an input String to its length as an Integer. This follows the standard ridiculously verbose Java anonymous class method for defining functions which can be passed around as objects. When Java 8 comes along, this process should become a lot less painful.
+            </p>
+            <pre class="prettyprint lang-java">
+PCollection&lt;String&gt; words = MemPipeline.typedCollectionOf(
+        Writables.strings(),
+        "when", "shall", "we", "three", "meet", "again");
+            </pre>
+            <p>
+                Now we use the in-memory pipeline factory to create our input data. For real MR exection, you do this with a different setup, but you end up with a <code class="prettify">PCollection&lt;String&gt;</code> regardless. This is one of the major benefits of Crunch, as unit testing your data processing logic is trivial to do.
+            </p>
+            <pre class="prettyprint lang-java">
+words                                                       // PCollection&lt;String&gt;
+     .by(stringLength, Writables.ints())                    // PTable&lt;Integer, String&gt;
+     .groupByKey()                                          // PGroupedTable&lt;Integer, String&gt;
+     .combineValues(Aggregators.STRING_CONCAT(",", false)); // PTable&lt;Integer, String&gt;
+            </pre>
+            <p>
+                Now we actually write our data processing logic. I've put the types in as comments so you can see how it changes over the pipeline.
+            </p>
+            <p>
+                The input collection is a flat <code>PCollection</code> of Strings, which we then index by their length using by. Now we have a <code>PTable</code> which has keys and values, but we're still in the map task. By using <code>groupByKey</code> we define the boundary between the map and reduce phase, so the table values will be emitted by key. We're then left with a <code>PGroupedTable</code> that we can perform reducer-style operations on. The reducer is defined in this case by the <code>combineValues</code> method, which takes an <code>Aggregator</code>. There are several predefined ones in the <code>Aggregators</code> class, or you can define your own.
+            </p>
+            <pre class="prettyprint lang-java">
+Map&lt;Integer, String&gt; actual = output.materializeToMap();
+            </pre>
+            <p>
+                Finally we materialize our output to a <code>Map</code>. This is mostly a convenience method for testing; in the real world you'd use the <code>write(Target)</code> method to write out to HDFS.
+            </p>
+            <h4>What's all this Writables stuff all about?</h4>
+            <p>TODO</p>
+            <h3>Let there by types</h3>
+            <p>
+                Now that we've seen how it can work in a simple situation, lets introduce some custom types to make it look more like a real-world problem which needs to be solved.
+            </p>
+            <p>TODO</p>
+        </article>
+        <footer>
+            <p><a href="http://twitter.com/dawhiting">@dawhiting</a> || I am <a href="http://thewit.ch">thewit.ch</a></p>
+        </footer>
+    </body>
+</html>
